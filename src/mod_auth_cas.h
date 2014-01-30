@@ -117,6 +117,8 @@ typedef struct cas_cfg {
 	unsigned int CASCookieEntropy;
 	unsigned int CASTimeout;
 	unsigned int CASIdleTimeout;
+	unsigned int CASGETTimeout;
+	unsigned int CASGETIdleTimeout;
 	unsigned int CASCookieHttpOnly;
 	unsigned int CASSSOEnabled;
 	unsigned int CASAuthoritative;
@@ -164,7 +166,7 @@ typedef enum {
 	cmd_ca_path, cmd_cookie_path, cmd_loginurl, cmd_validateurl, cmd_proxyurl, cmd_cookie_entropy,
 	cmd_session_timeout, cmd_idle_timeout, cmd_cache_interval, cmd_cookie_domain, cmd_cookie_httponly,
 	cmd_sso, cmd_validate_saml, cmd_attribute_delimiter, cmd_attribute_prefix, cmd_root_proxied_as,
-	cmd_authoritative
+	cmd_authoritative, cmd_session_timeout_get, cmd_idle_timeout_get
 } valid_cmds;
 
 module AP_MODULE_DECLARE_DATA auth_cas_module;

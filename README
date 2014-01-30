@@ -310,6 +310,18 @@ Description:	This is a limit, in seconds, of how long a mod_auth_cas session can
 		seconds, the user is redirected to the CASLoginURL to obtain a new
 		service ticket.
 
+Directive: 	CASGETTimeout
+Default:	7200 (2 hours)
+Description:	The same as CASTimeout, but only for GET requests. This parameter was introduced
+        due to losing POST data in web forms. It is probable, that before sending form data
+        with POST request user will open that form using GET request. It introduces possibility
+        to renew CAS session before sending POST data. Set this to value equal or lower a bit 
+        from CASTimeout.
+
+Directive: 	CASGETIdleTimeout
+Default:	3600 (1 hour)
+Description:	The same as CASIdleTimeout, but only for GET requests. See CASGETTimeout description.
+
 Directive: 	CASCacheCleanInterval
 Default:	1800 (30 minutes)
 Description:	This is the minimum amount of time that must pass inbetween cache

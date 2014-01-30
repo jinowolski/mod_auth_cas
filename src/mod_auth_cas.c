@@ -110,6 +110,8 @@ void *cas_create_server_config(apr_pool_t *pool, server_rec *svr)
 	c->CASCookieEntropy = CAS_DEFAULT_COOKIE_ENTROPY;
 	c->CASTimeout = CAS_DEFAULT_COOKIE_TIMEOUT;
 	c->CASIdleTimeout = CAS_DEFAULT_COOKIE_IDLE_TIMEOUT;
+	c->CASGETTimeout = CAS_DEFAULT_COOKIE_TIMEOUT;
+	c->CASGETIdleTimeout = CAS_DEFAULT_COOKIE_IDLE_TIMEOUT;
 	c->CASCacheCleanInterval = CAS_DEFAULT_CACHE_CLEAN_INTERVAL;
 	c->CASCookieDomain = CAS_DEFAULT_COOKIE_DOMAIN;
 	c->CASCookieHttpOnly = CAS_DEFAULT_COOKIE_HTTPONLY;
@@ -146,6 +148,8 @@ void *cas_merge_server_config(apr_pool_t *pool, void *BASE, void *ADD)
 	c->CASCookieEntropy = (add->CASCookieEntropy != CAS_DEFAULT_COOKIE_ENTROPY ? add->CASCookieEntropy : base->CASCookieEntropy);
 	c->CASTimeout = (add->CASTimeout != CAS_DEFAULT_COOKIE_TIMEOUT ? add->CASTimeout : base->CASTimeout);
 	c->CASIdleTimeout = (add->CASIdleTimeout != CAS_DEFAULT_COOKIE_IDLE_TIMEOUT ? add->CASIdleTimeout : base->CASIdleTimeout);
+	c->CASGETTimeout = (add->CASGETTimeout != CAS_DEFAULT_COOKIE_TIMEOUT ? add->CASGETTimeout : base->CASGETTimeout);
+	c->CASGETIdleTimeout = (add->CASGETIdleTimeout != CAS_DEFAULT_COOKIE_IDLE_TIMEOUT ? add->CASGETIdleTimeout : base->CASGETIdleTimeout);
 	c->CASCacheCleanInterval = (add->CASCacheCleanInterval != CAS_DEFAULT_CACHE_CLEAN_INTERVAL ? add->CASCacheCleanInterval : base->CASCacheCleanInterval);
 	c->CASCookieDomain = (add->CASCookieDomain != CAS_DEFAULT_COOKIE_DOMAIN ? add->CASCookieDomain : base->CASCookieDomain);
 	c->CASCookieHttpOnly = (add->CASCookieHttpOnly != CAS_DEFAULT_COOKIE_HTTPONLY ? add->CASCookieHttpOnly : base->CASCookieHttpOnly);
@@ -361,7 +365,20 @@ const char *cfg_readCASParameter(cmd_parms *cmd, void *cfg, const char *value)
 			else
 				return(apr_psprintf(cmd->pool, "MOD_AUTH_CAS: Invalid CASIdleTimeout (%s) specified - must be numeric", value));
 		break;
-
+		case cmd_session_timeout_get:
+			i = atoi(value);
+			if(i >= 0)
+				c->CASGETTimeout = i;
+			else
+				return(apr_psprintf(cmd->pool, "MOD_AUTH_CAS: Invalid CASGETTimeout (%s) specified - must be numeric", value));
+		break;
+		case cmd_idle_timeout_get:
+			i = atoi(value);
+			if(i > 0)
+				c->CASGETIdleTimeout = i;
+			else
+				return(apr_psprintf(cmd->pool, "MOD_AUTH_CAS: Invalid CASGETIdleTimeout (%s) specified - must be numeric", value));
+		break;
 		case cmd_cache_interval:
 			i = atoi(value);
 			if(i > 0)
@@ -1147,7 +1164,12 @@ void CASCleanCache(request_rec *r, cas_cfg *c)
 				continue;
 			}
 			if(readCASCacheFile(r, c, (char *) fi.name, &cache) == TRUE) {
-				if((c->CASTimeout > 0 && (cache.issued < (apr_time_now()-(c->CASTimeout*((apr_time_t) APR_USEC_PER_SEC))))) || cache.lastactive < (apr_time_now()-(c->CASIdleTimeout*((apr_time_t) APR_USEC_PER_SEC)))) {
+				if(
+                    (c->CASTimeout > 0 && (cache.issued < (apr_time_now()-(c->CASTimeout*((apr_time_t) APR_USEC_PER_SEC))))) || 
+                    cache.lastactive < (apr_time_now()-(c->CASIdleTimeout*((apr_time_t) APR_USEC_PER_SEC))) ||
+                    (c->CASGETTimeout > 0 && r->method_number == M_GET && (cache.issued < (apr_time_now()-(c->CASGETTimeout*((apr_time_t) APR_USEC_PER_SEC))))) || 
+                    (r->method_number == M_GET && cache.lastactive < (apr_time_now()-(c->CASGETIdleTimeout*((apr_time_t) APR_USEC_PER_SEC))))
+                ) {
 					/* delete this file since it is no longer valid */
 					apr_file_close(cacheFile);
 					deleteCASCacheFile(r, (char *) fi.name);
@@ -1652,7 +1674,12 @@ apr_byte_t isValidCASCookie(request_rec *r, cas_cfg *c, char *cookie, char **use
 		return FALSE;
 	}
 
-	if(cache.issued < (apr_time_now()-(c->CASTimeout*((apr_time_t) APR_USEC_PER_SEC))) || cache.lastactive < (apr_time_now()-(c->CASIdleTimeout*((apr_time_t) APR_USEC_PER_SEC)))) {
+	if(
+        cache.issued < (apr_time_now()-(c->CASTimeout*((apr_time_t) APR_USEC_PER_SEC))) || 
+        cache.lastactive < (apr_time_now()-(c->CASIdleTimeout*((apr_time_t) APR_USEC_PER_SEC))) ||
+        (r->method_number == M_GET && cache.issued < (apr_time_now()-(c->CASGETTimeout*((apr_time_t) APR_USEC_PER_SEC)))) || 
+        (r->method_number == M_GET && cache.lastactive < (apr_time_now()-(c->CASGETIdleTimeout*((apr_time_t) APR_USEC_PER_SEC))))
+    ) {
 		/* delete this file since it is no longer valid */
 		deleteCASCacheFile(r, cookie);
 		if(c->CASDebug)
@@ -2701,6 +2728,8 @@ const command_rec cas_cmds [] = {
 	/* cache timeout options */
 	AP_INIT_TAKE1("CASTimeout", cfg_readCASParameter, (void *) cmd_session_timeout, RSRC_CONF, "Maximum time (in seconds) a session cookie is valid for, regardless of idle time.  Set to 0 to allow non-idle sessions to never expire"),
 	AP_INIT_TAKE1("CASIdleTimeout", cfg_readCASParameter, (void *) cmd_idle_timeout, RSRC_CONF, "Maximum time (in seconds) a session can be idle for"),
+	AP_INIT_TAKE1("CASGETTimeout", cfg_readCASParameter, (void *) cmd_session_timeout_get, RSRC_CONF, "Maximum time (in seconds) a session cookie is valid for GET requests, regardless of idle time.  Set to 0 to allow non-idle sessions to never expire"),
+	AP_INIT_TAKE1("CASGETIdleTimeout", cfg_readCASParameter, (void *) cmd_idle_timeout_get, RSRC_CONF, "Maximum time (in seconds) a session can be idle for GET requests"),
 	AP_INIT_TAKE1("CASCacheCleanInterval", cfg_readCASParameter, (void *) cmd_cache_interval, RSRC_CONF, "Amount of time (in seconds) between cache cleanups.  This value is checked when a new local ticket is issued or when a ticket expires."),
 	AP_INIT_TAKE1("CASRootProxiedAs", cfg_readCASParameter, (void *) cmd_root_proxied_as, RSRC_CONF, "URL used to access the root of the virtual server (only needed when the server is proxied)"),
  	AP_INIT_TAKE1("CASScrubRequestHeaders", ap_set_string_slot, (void *) APR_OFFSETOF(cas_dir_cfg, CASScrubRequestHeaders), ACCESS_CONF, "Scrub CAS user name and SAML attribute headers from the user's request."),
