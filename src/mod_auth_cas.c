@@ -1355,46 +1355,53 @@ void CASSAMLLogout(request_rec *r, char *body)
 	apr_xml_parser *parser = apr_xml_parser_create(r->pool);
 	cas_cfg *c = ap_get_module_config(r->server->module_config, &auth_cas_module);
 
-	if(body != NULL && strncmp(body, "logoutRequest=", 14) == 0) {
-		body += 14;
-		line = (char *) body;
+    if(body != NULL) {
+        if(strncmp(body, "logoutRequest=", 14) == 0)
+            body += 14;
+        else if(strncmp(body, "ogoutRequest=", 13) == 0)
+            body += 13;
+        else
+            return;
+    } else {
+        return;
+    }
+    line = (char *) body;
 
-		/* convert + to ' ' or else the XML won't parse right */
-		do {
-			if(*line == '+')
-				*line = ' ';
-			line++;
-		} while (*line != '\0');
+    /* convert + to ' ' or else the XML won't parse right */
+    do {
+        if(*line == '+')
+            *line = ' ';
+        line++;
+    } while (*line != '\0');
 
-		ap_unescape_url((char *) body);
+    ap_unescape_url((char *) body);
 
-		if(c->CASDebug)
-			ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "SAML Logout Request: %s", body);
+    if(c->CASDebug)
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "SAML Logout Request: %s", body);
 
-		/* parse the XML response */
-		if(apr_xml_parser_feed(parser, body, strlen(body)) != APR_SUCCESS) {
-			line = apr_pcalloc(r->pool, 512);
-			apr_xml_parser_geterror(parser, line, 512);
-			ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "MOD_AUTH_CAS: error parsing SAML logoutRequest: %s (incomplete SAML body?)", line);
-			return;
-		}
-		/* retrieve a DOM object */
-		if(apr_xml_parser_done(parser, &doc) != APR_SUCCESS) {
-			line = apr_pcalloc(r->pool, 512);
-			apr_xml_parser_geterror(parser, line, 512);
-			ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "MOD_AUTH_CAS: error retrieving XML document for SAML logoutRequest: %s", line);
-			return;
-		}
+    /* parse the XML response */
+    if(apr_xml_parser_feed(parser, body, strlen(body)) != APR_SUCCESS) {
+        line = apr_pcalloc(r->pool, 512);
+        apr_xml_parser_geterror(parser, line, 512);
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "MOD_AUTH_CAS: error parsing SAML logoutRequest: %s (incomplete SAML body?)", line);
+        return;
+    }
+    /* retrieve a DOM object */
+    if(apr_xml_parser_done(parser, &doc) != APR_SUCCESS) {
+        line = apr_pcalloc(r->pool, 512);
+        apr_xml_parser_geterror(parser, line, 512);
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "MOD_AUTH_CAS: error retrieving XML document for SAML logoutRequest: %s", line);
+        return;
+    }
 
-		node = doc->root->first_child;
-		while(node != NULL) {
-			if(apr_strnatcmp(node->name, "SessionIndex") == 0 && node->first_cdata.first != NULL) {
-				expireCASST(r, node->first_cdata.first->text);
-				return;
-			}
-			node = node->next;
-		}
-	}
+    node = doc->root->first_child;
+    while(node != NULL) {
+        if(apr_strnatcmp(node->name, "SessionIndex") == 0 && node->first_cdata.first != NULL) {
+            expireCASST(r, node->first_cdata.first->text);
+            return;
+        }
+        node = node->next;
+    }
 
 	return;
 }
